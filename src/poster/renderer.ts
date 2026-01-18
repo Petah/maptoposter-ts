@@ -1,10 +1,10 @@
 import { createCanvas, registerFont, CanvasRenderingContext2D } from 'canvas';
 import * as fs from 'fs';
 import * as path from 'path';
-import { MapData, Theme, Coordinates, FontPaths } from './types';
+import { MapData, Theme, Coordinates, FontPaths } from '@/types';
 
-const WIDTH = 3600; // 12 inches at 300 DPI
-const HEIGHT = 4800; // 16 inches at 300 DPI
+const WIDTH = 3600;
+const HEIGHT = 4800;
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
@@ -26,7 +26,6 @@ function projectPoint(
   height: number
 ): { x: number; y: number } {
   const x = ((lon - bounds.minLon) / (bounds.maxLon - bounds.minLon)) * width;
-  // Flip Y axis since canvas Y increases downward
   const y = height - ((lat - bounds.minLat) / (bounds.maxLat - bounds.minLat)) * height;
   return { x, y };
 }
@@ -70,14 +69,13 @@ function loadFonts(fontsDir: string): FontPaths | null {
     light: path.join(fontsDir, 'Roboto-Light.ttf'),
   };
 
-  for (const [weight, fontPath] of Object.entries(fonts)) {
+  for (const fontPath of Object.values(fonts)) {
     if (!fs.existsSync(fontPath)) {
       console.log(`Warning: Font not found: ${fontPath}`);
       return null;
     }
   }
 
-  // Register fonts with canvas
   registerFont(fonts.bold, { family: 'Roboto', weight: 'bold' });
   registerFont(fonts.regular, { family: 'Roboto', weight: 'normal' });
   registerFont(fonts.light, { family: 'Roboto', weight: '300' });
@@ -97,15 +95,11 @@ export function renderPoster(
   const canvas = createCanvas(WIDTH, HEIGHT);
   const ctx = canvas.getContext('2d');
 
-  // Load fonts
   const fonts = loadFonts(fontsDir);
-  const fontFamily = fonts ? 'Roboto' : 'sans-serif';
 
-  // Fill background
   ctx.fillStyle = theme.bg;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
-  // Draw water
   ctx.fillStyle = theme.water;
   for (const polygon of mapData.water) {
     if (polygon.points.length < 3) continue;
@@ -123,7 +117,6 @@ export function renderPoster(
     ctx.fill();
   }
 
-  // Draw parks
   ctx.fillStyle = theme.parks;
   for (const polygon of mapData.parks) {
     if (polygon.points.length < 3) continue;
@@ -141,7 +134,6 @@ export function renderPoster(
     ctx.fill();
   }
 
-  // Draw roads
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
@@ -149,7 +141,7 @@ export function renderPoster(
     if (road.points.length < 2) continue;
 
     ctx.strokeStyle = road.color;
-    ctx.lineWidth = road.width * 3; // Scale up for high DPI
+    ctx.lineWidth = road.width * 3;
 
     ctx.beginPath();
     const first = projectPoint(road.points[0].x, road.points[0].y, mapData.bounds, WIDTH, HEIGHT);
@@ -163,14 +155,11 @@ export function renderPoster(
     ctx.stroke();
   }
 
-  // Draw gradients
   createGradientFade(ctx, WIDTH, HEIGHT, theme.gradient_color, 'top');
   createGradientFade(ctx, WIDTH, HEIGHT, theme.gradient_color, 'bottom');
 
-  // Draw typography
   const spacedCity = city.toUpperCase().split('').join('  ');
 
-  // Main city name
   ctx.fillStyle = theme.text;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -182,7 +171,6 @@ export function renderPoster(
   }
   ctx.fillText(spacedCity, WIDTH / 2, HEIGHT * 0.86);
 
-  // Country
   if (fonts) {
     ctx.font = '300 66px Roboto';
   } else {
@@ -190,10 +178,9 @@ export function renderPoster(
   }
   ctx.fillText(country.toUpperCase(), WIDTH / 2, HEIGHT * 0.90);
 
-  // Coordinates
   const lat = coordinates.lat;
   const lon = coordinates.lon;
-  let coordsText = `${Math.abs(lat).toFixed(4)}° ${lat >= 0 ? 'N' : 'S'} / ${Math.abs(lon).toFixed(4)}° ${lon >= 0 ? 'E' : 'W'}`;
+  const coordsText = `${Math.abs(lat).toFixed(4)} ${lat >= 0 ? 'N' : 'S'} / ${Math.abs(lon).toFixed(4)} ${lon >= 0 ? 'E' : 'W'}`;
 
   if (fonts) {
     ctx.font = 'normal 42px Roboto';
@@ -204,7 +191,6 @@ export function renderPoster(
   ctx.fillText(coordsText, WIDTH / 2, HEIGHT * 0.93);
   ctx.globalAlpha = 1;
 
-  // Divider line
   ctx.strokeStyle = theme.text;
   ctx.lineWidth = 3;
   ctx.beginPath();
@@ -212,7 +198,6 @@ export function renderPoster(
   ctx.lineTo(WIDTH * 0.6, HEIGHT * 0.875);
   ctx.stroke();
 
-  // Attribution
   if (fonts) {
     ctx.font = '300 24px Roboto';
   } else {
@@ -220,10 +205,9 @@ export function renderPoster(
   }
   ctx.textAlign = 'right';
   ctx.globalAlpha = 0.5;
-  ctx.fillText('© OpenStreetMap contributors', WIDTH * 0.98, HEIGHT * 0.98);
+  ctx.fillText('OpenStreetMap contributors', WIDTH * 0.98, HEIGHT * 0.98);
   ctx.globalAlpha = 1;
 
-  // Save to file
   const buffer = canvas.toBuffer('image/png');
   fs.writeFileSync(outputPath, buffer);
 }

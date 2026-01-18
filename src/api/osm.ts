@@ -1,4 +1,4 @@
-import { Coordinates, MapData, OSMNode, OSMWay, RoadSegment, Polygon, Theme } from './types';
+import { Coordinates, MapData, RoadSegment, Polygon, Theme } from '@/types';
 
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
 
@@ -35,10 +35,10 @@ function getBbox(center: Coordinates, distanceMeters: number): [number, number, 
   const lonDelta = metersToDegreesLon(distanceMeters, center.lat);
 
   return [
-    center.lat - latDelta, // south
-    center.lon - lonDelta, // west
-    center.lat + latDelta, // north
-    center.lon + lonDelta, // east
+    center.lat - latDelta,
+    center.lon - lonDelta,
+    center.lat + latDelta,
+    center.lon + lonDelta,
   ];
 }
 
@@ -106,7 +106,6 @@ export async function fetchMapData(
   const water: Polygon[] = [];
   const parks: Polygon[] = [];
 
-  // Fetch roads
   onProgress?.('Downloading street network');
   const roadsQuery = `
     [out:json][timeout:90];
@@ -132,10 +131,8 @@ export async function fetchMapData(
     }
   }
 
-  // Small delay to respect rate limits
   await new Promise((resolve) => setTimeout(resolve, 500));
 
-  // Fetch water
   onProgress?.('Downloading water features');
   const waterQuery = `
     [out:json][timeout:90];
@@ -155,7 +152,6 @@ export async function fetchMapData(
         const points = element.geometry.map((p) => ({ x: p.lon, y: p.lat }));
         water.push({ points, type: 'water' });
       } else if (element.members) {
-        // Handle relations (multipolygons)
         for (const member of element.members) {
           if (member.geometry) {
             const points = member.geometry.map((p) => ({ x: p.lon, y: p.lat }));
@@ -170,7 +166,6 @@ export async function fetchMapData(
 
   await new Promise((resolve) => setTimeout(resolve, 300));
 
-  // Fetch parks
   onProgress?.('Downloading parks/green spaces');
   const parksQuery = `
     [out:json][timeout:90];

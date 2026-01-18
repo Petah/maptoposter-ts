@@ -1,4 +1,4 @@
-import { GeocodingResult } from './types';
+import { GeocodingResult } from '@/types';
 
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
 const USER_AGENT = 'maptoposter/1.0';

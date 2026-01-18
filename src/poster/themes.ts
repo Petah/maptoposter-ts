@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { Theme } from './types';
+import { Theme } from '@/types';
 
 const DEFAULT_THEME: Theme = {
   name: 'Feature-Based Shading',
@@ -39,7 +39,7 @@ export function loadTheme(themeName: string, themesDir: string): Theme {
   }
 
   const themeData = JSON.parse(fs.readFileSync(themePath, 'utf-8')) as Theme;
-  console.log(`✓ Loaded theme: ${themeData.name || themeName}`);
+  console.log(`Loaded theme: ${themeData.name || themeName}`);
   if (themeData.description) {
     console.log(`  ${themeData.description}`);
   }
