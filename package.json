@@ -1,0 +1,26 @@
+{
+  "name": "maptoposter",
+  "version": "1.0.0",
+  "description": "Generate beautiful map posters for any city",
+  "main": "dist/index.js",
+  "bin": {
+    "maptoposter": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts"
+  },
+  "keywords": ["map", "poster", "osm", "openstreetmap", "canvas"],
+  "license": "MIT",
+  "dependencies": {
+    "canvas": "^2.11.2",
+    "commander": "^12.1.0",
+    "ora": "^5.4.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.0",
+    "ts-node": "^10.9.2"
+  }
+}
