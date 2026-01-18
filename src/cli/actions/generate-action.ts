@@ -121,10 +121,14 @@ Distance guide:
     console.log(`\nGenerating map for ${city}, ${country}...`);
 
     spinner = ora('Fetching map data...').start();
-    const mapData = await fetchMapData(geocodingResult.coordinates, distance, theme, (step) => {
+    const { mapData, cacheHit } = await fetchMapData(geocodingResult.coordinates, distance, theme, (step) => {
       spinner.text = step;
     });
-    spinner.succeed('All data downloaded successfully!');
+    if (cacheHit) {
+      spinner.succeed('Loaded map data from cache');
+    } else {
+      spinner.succeed('Downloaded and cached map data');
+    }
 
     spinner = ora('Rendering map...').start();
     console.log('Applying road hierarchy colors...');

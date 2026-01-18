@@ -1,6 +1,53 @@
 import { Coordinates, MapData, RoadSegment, Polygon, Theme } from '@/types';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+const CACHE_DIR = path.join(__dirname, '..', '..', 'cache');
+
+interface CachedRoad {
+  geometry: Array<{ lat: number; lon: number }>;
+  highway: string;
+}
+
+interface CachedPolygon {
+  geometry: Array<{ lat: number; lon: number }>;
+}
+
+interface CachedOsmData {
+  roads: CachedRoad[];
+  water: CachedPolygon[];
+  parks: CachedPolygon[];
+  bounds: { minLat: number; maxLat: number; minLon: number; maxLon: number };
+  cachedAt: string;
+}
+
+function getCacheKey(center: Coordinates, distanceMeters: number): string {
+  const lat = center.lat.toFixed(4);
+  const lon = center.lon.toFixed(4);
+  return `${lat}_${lon}_${distanceMeters}`;
+}
+
+function loadFromCache(cacheKey: string): CachedOsmData | null {
+  const cachePath = path.join(CACHE_DIR, `${cacheKey}.json`);
+  if (fs.existsSync(cachePath)) {
+    try {
+      const data = fs.readFileSync(cachePath, 'utf-8');
+      return JSON.parse(data) as CachedOsmData;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function saveToCache(cacheKey: string, data: CachedOsmData): void {
+  if (!fs.existsSync(CACHE_DIR)) {
+    fs.mkdirSync(CACHE_DIR, { recursive: true });
+  }
+  const cachePath = path.join(CACHE_DIR, `${cacheKey}.json`);
+  fs.writeFileSync(cachePath, JSON.stringify(data, null, 2));
+}
 
 interface OverpassElement {
   type: 'node' | 'way' | 'relation';
@@ -93,18 +140,53 @@ function getRoadWidth(highway: string): number {
   return 0.4;
 }
 
+export interface FetchMapDataResult {
+  mapData: MapData;
+  cacheHit: boolean;
+}
+
+function applyThemeToRoads(cachedRoads: CachedRoad[], theme: Theme): RoadSegment[] {
+  return cachedRoads.map((road) => ({
+    points: road.geometry.map((p) => ({ x: p.lon, y: p.lat })),
+    highway: road.highway,
+    color: getRoadColor(road.highway, theme),
+    width: getRoadWidth(road.highway),
+  }));
+}
+
+function convertCachedPolygons(cachedPolygons: CachedPolygon[], type: 'water' | 'park'): Polygon[] {
+  return cachedPolygons.map((poly) => ({
+    points: poly.geometry.map((p) => ({ x: p.lon, y: p.lat })),
+    type,
+  }));
+}
+
 export async function fetchMapData(
   center: Coordinates,
   distanceMeters: number,
   theme: Theme,
   onProgress?: (step: string) => void
-): Promise<MapData> {
+): Promise<FetchMapDataResult> {
+  const cacheKey = getCacheKey(center, distanceMeters);
+  const cached = loadFromCache(cacheKey);
+
+  if (cached) {
+    onProgress?.('Loading from cache');
+    const mapData: MapData = {
+      roads: applyThemeToRoads(cached.roads, theme),
+      water: convertCachedPolygons(cached.water, 'water'),
+      parks: convertCachedPolygons(cached.parks, 'park'),
+      bounds: cached.bounds,
+    };
+    return { mapData, cacheHit: true };
+  }
+
   const bbox = getBbox(center, distanceMeters);
   const bboxStr = bbox.join(',');
 
-  const roads: RoadSegment[] = [];
-  const water: Polygon[] = [];
-  const parks: Polygon[] = [];
+  const cachedRoads: CachedRoad[] = [];
+  const cachedWater: CachedPolygon[] = [];
+  const cachedParks: CachedPolygon[] = [];
 
   onProgress?.('Downloading street network');
   const roadsQuery = `
@@ -119,14 +201,9 @@ export async function fetchMapData(
 
   for (const element of roadsData.elements) {
     if (element.type === 'way' && element.geometry && element.tags?.highway) {
-      const highway = element.tags.highway;
-      const points = element.geometry.map((p) => ({ x: p.lon, y: p.lat }));
-
-      roads.push({
-        points,
-        highway,
-        color: getRoadColor(highway, theme),
-        width: getRoadWidth(highway),
+      cachedRoads.push({
+        geometry: element.geometry,
+        highway: element.tags.highway,
       });
     }
   }
@@ -149,13 +226,11 @@ export async function fetchMapData(
 
     for (const element of waterData.elements) {
       if (element.geometry) {
-        const points = element.geometry.map((p) => ({ x: p.lon, y: p.lat }));
-        water.push({ points, type: 'water' });
+        cachedWater.push({ geometry: element.geometry });
       } else if (element.members) {
         for (const member of element.members) {
           if (member.geometry) {
-            const points = member.geometry.map((p) => ({ x: p.lon, y: p.lat }));
-            water.push({ points, type: 'water' });
+            cachedWater.push({ geometry: member.geometry });
           }
         }
       }
@@ -182,13 +257,11 @@ export async function fetchMapData(
 
     for (const element of parksData.elements) {
       if (element.geometry) {
-        const points = element.geometry.map((p) => ({ x: p.lon, y: p.lat }));
-        parks.push({ points, type: 'park' });
+        cachedParks.push({ geometry: element.geometry });
       } else if (element.members) {
         for (const member of element.members) {
           if (member.geometry) {
-            const points = member.geometry.map((p) => ({ x: p.lon, y: p.lat }));
-            parks.push({ points, type: 'park' });
+            cachedParks.push({ geometry: member.geometry });
           }
         }
       }
@@ -197,15 +270,29 @@ export async function fetchMapData(
     // Parks are optional
   }
 
-  return {
-    roads,
-    water,
-    parks,
-    bounds: {
-      minLat: bbox[0],
-      maxLat: bbox[2],
-      minLon: bbox[1],
-      maxLon: bbox[3],
-    },
+  const bounds = {
+    minLat: bbox[0],
+    maxLat: bbox[2],
+    minLon: bbox[1],
+    maxLon: bbox[3],
   };
+
+  // Save to cache
+  const cacheData: CachedOsmData = {
+    roads: cachedRoads,
+    water: cachedWater,
+    parks: cachedParks,
+    bounds,
+    cachedAt: new Date().toISOString(),
+  };
+  saveToCache(cacheKey, cacheData);
+
+  const mapData: MapData = {
+    roads: applyThemeToRoads(cachedRoads, theme),
+    water: convertCachedPolygons(cachedWater, 'water'),
+    parks: convertCachedPolygons(cachedParks, 'park'),
+    bounds,
+  };
+
+  return { mapData, cacheHit: false };
 }
