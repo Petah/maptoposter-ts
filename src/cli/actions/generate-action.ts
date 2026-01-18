@@ -1,7 +1,8 @@
 import {
   CommandLineAction,
   CommandLineStringParameter,
-  CommandLineIntegerParameter
+  CommandLineIntegerParameter,
+  CommandLineChoiceParameter
 } from '@rushstack/ts-command-line';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -9,20 +10,22 @@ import ora from 'ora';
 import { getCoordinates } from '@/api/geocoding';
 import { fetchMapData } from '@/api/osm';
 import { renderPoster } from '@/poster/renderer';
+import { renderPosterSvg } from '@/poster/svg-renderer';
 import { loadTheme, getAvailableThemes } from '@/poster/themes';
+import { OutputFormat } from '@/types';
 
 const THEMES_DIR = path.join(__dirname, '..', '..', '..', 'themes');
 const FONTS_DIR = path.join(__dirname, '..', '..', '..', 'fonts');
 const POSTERS_DIR = path.join(__dirname, '..', '..', '..', 'posters');
 
-function generateOutputFilename(city: string, themeName: string): string {
+function generateOutputFilename(city: string, themeName: string, format: OutputFormat): string {
   if (!fs.existsSync(POSTERS_DIR)) {
     fs.mkdirSync(POSTERS_DIR, { recursive: true });
   }
 
   const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '_').slice(0, 15);
   const citySlug = city.toLowerCase().replace(/\s+/g, '_');
-  const filename = `${citySlug}_${themeName}_${timestamp}.png`;
+  const filename = `${citySlug}_${themeName}_${timestamp}.${format}`;
 
   return path.join(POSTERS_DIR, filename);
 }
@@ -32,6 +35,7 @@ export class GenerateAction extends CommandLineAction {
   private countryParameter: CommandLineStringParameter;
   private themeParameter: CommandLineStringParameter;
   private distanceParameter: CommandLineIntegerParameter;
+  private formatParameter: CommandLineChoiceParameter;
 
   public constructor() {
     super({
@@ -88,6 +92,14 @@ Distance guide:
       description: 'Map radius in meters',
       defaultValue: 29000
     });
+
+    this.formatParameter = this.defineChoiceParameter({
+      parameterLongName: '--format',
+      parameterShortName: '-f',
+      alternatives: ['png', 'svg'],
+      description: 'Output format (png or svg)',
+      defaultValue: 'png'
+    });
   }
 
   protected async onExecuteAsync(): Promise<void> {
@@ -95,6 +107,7 @@ Distance guide:
     const country = this.countryParameter.value!;
     const themeName = this.themeParameter.value!;
     const distance = this.distanceParameter.value!;
+    const format = this.formatParameter.value! as OutputFormat;
 
     const availableThemes = getAvailableThemes(THEMES_DIR);
     if (!availableThemes.includes(themeName)) {
@@ -116,7 +129,7 @@ Distance guide:
     spinner.succeed(`Found: ${geocodingResult.address}`);
     console.log(`Coordinates: ${geocodingResult.coordinates.lat}, ${geocodingResult.coordinates.lon}`);
 
-    const outputFile = generateOutputFilename(city, themeName);
+    const outputFile = generateOutputFilename(city, themeName, format);
 
     console.log(`\nGenerating map for ${city}, ${country}...`);
 
@@ -132,15 +145,26 @@ Distance guide:
 
     spinner = ora('Rendering map...').start();
     console.log('Applying road hierarchy colors...');
-    renderPoster(
-      mapData,
-      theme,
-      city,
-      country,
-      geocodingResult.coordinates,
-      outputFile,
-      FONTS_DIR
-    );
+    if (format === 'svg') {
+      renderPosterSvg(
+        mapData,
+        theme,
+        city,
+        country,
+        geocodingResult.coordinates,
+        outputFile
+      );
+    } else {
+      renderPoster(
+        mapData,
+        theme,
+        city,
+        country,
+        geocodingResult.coordinates,
+        outputFile,
+        FONTS_DIR
+      );
+    }
     spinner.succeed(`Saved to ${outputFile}`);
 
     console.log('\n' + '='.repeat(50));

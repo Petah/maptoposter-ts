@@ -89,3 +89,5 @@ export interface FontPaths {
   regular: string;
   light: string;
 }
+
+export type OutputFormat = 'png' | 'svg';
