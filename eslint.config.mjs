@@ -15,9 +15,13 @@ export default tseslint.config(
       }
     },
     rules: {
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      indent: ['error', 4, { SwitchCase: 1 }],
+      quotes: ['error', 'single', { avoidEscape: true }],
+      'quote-props': ['error', 'as-needed'],
+      'prefer-template': 'error',
+      '@typescript-eslint/no-unused-vars': ['error'],
       '@typescript-eslint/explicit-function-return-type': 'off',
-      '@typescript-eslint/no-explicit-any': 'warn'
+      '@typescript-eslint/no-explicit-any': 'warn',
     }
   }
 );

@@ -1,6 +1,5 @@
-#!/usr/bin/env node
-
 import { MapToPosterCommandLine } from '@/cli/application';
+import { Config } from './config';
 
-const commandLine = new MapToPosterCommandLine();
-commandLine.executeAsync().catch(console.error);
+const commandLine = new MapToPosterCommandLine(Config.default());
+await commandLine.executeAsync();

@@ -1,45 +1,51 @@
-import { GeocodingResult } from '@/types';
+import { apiGet } from '@/util/api';
+import { cache } from '@/util/cache';
+import { Config } from '@/config';
 
-const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
-const USER_AGENT = 'maptoposter/1.0';
-
-interface NominatimResult {
-  display_name: string;
-  lat: string;
-  lon: string;
+export interface GeocodingResult {
+    address: string;
+    coordinates: Coordinates;
 }
 
-export async function getCoordinates(city: string, country: string): Promise<GeocodingResult> {
-  const query = `${city}, ${country}`;
-  const params = new URLSearchParams({
-    q: query,
-    format: 'json',
-    limit: '1',
-  });
+export interface Coordinates {
+    lat: number;
+    lon: number;
+}
 
-  const response = await fetch(`${NOMINATIM_URL}?${params}`, {
-    headers: {
-      'User-Agent': USER_AGENT,
-    },
-  });
+interface NominatimResult {
+    display_name: string;
+    lat: string;
+    lon: string;
+}
 
-  if (!response.ok) {
-    throw new Error(`Geocoding request failed: ${response.statusText}`);
-  }
+export async function getCoordinates(config: Config, city: string, country: string): Promise<GeocodingResult> {
+    return cache(config, ['geocode', city, country], () =>
+        fetchCoordinates(config, city, country)
+    );
+}
 
-  const results = (await response.json()) as NominatimResult[];
+export async function fetchCoordinates(config: Config, city: string, country: string): Promise<GeocodingResult> {
+    const query = `${city}, ${country}`;
+    const params = new URLSearchParams({
+        q: query,
+        format: 'json',
+        limit: '1',
+    });
 
-  if (!results || results.length === 0) {
-    throw new Error(`Could not find coordinates for ${city}, ${country}`);
-  }
+    const url = `${config.nominatimUrl}?${params}`;
+    const results = await apiGet<NominatimResult[]>(config, url);
 
-  const location = results[0];
+    if (!results || results.length === 0) {
+        throw new Error(`Could not find coordinates for ${city}, ${country}`);
+    }
 
-  return {
-    address: location.display_name,
-    coordinates: {
-      lat: parseFloat(location.lat),
-      lon: parseFloat(location.lon),
-    },
-  };
+    const location = results[0];
+
+    return {
+        address: location.display_name,
+        coordinates: {
+            lat: parseFloat(location.lat),
+            lon: parseFloat(location.lon),
+        },
+    };
 }

@@ -1,52 +1,61 @@
-import { Coordinates, MapData, RoadSegment, Polygon, Theme } from '@/types';
-import * as fs from 'fs';
-import * as path from 'path';
+import { cache } from '@/util/cache';
+import { Config } from '@/config';
+import { metersToDegreesLat, metersToDegreesLon } from '@/util/distance';
+import { apiPost } from '@/util/api';
+import { logDebug } from '@/util/logger';
+import { Coordinates } from './geocoding';
+import { Theme } from '@/theme';
 
-const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
-const CACHE_DIR = path.join(__dirname, '..', '..', 'cache');
+export async function fetchMapData(
+    config: Config,
+    center: Coordinates,
+    distanceMeters: number,
+    theme: Theme,
+): Promise<MapData> {
+    const rawData = await fetchRawOsmData(config, center, distanceMeters);
+    return rawDataToMapData(rawData, theme);
+}
 
-interface CachedRoad {
+export interface RawRoad {
   geometry: Array<{ lat: number; lon: number }>;
   highway: string;
 }
 
-interface CachedPolygon {
+export interface RawPolygon {
   geometry: Array<{ lat: number; lon: number }>;
 }
 
-interface CachedOsmData {
-  roads: CachedRoad[];
-  water: CachedPolygon[];
-  parks: CachedPolygon[];
-  bounds: { minLat: number; maxLat: number; minLon: number; maxLon: number };
-  cachedAt: string;
+export interface RawOsmData {
+  roads: RawRoad[];
+  water: RawPolygon[];
+  parks: RawPolygon[];
+  bounds: MapBounds;
 }
 
-function getCacheKey(center: Coordinates, distanceMeters: number): string {
-  const lat = center.lat.toFixed(4);
-  const lon = center.lon.toFixed(4);
-  return `${lat}_${lon}_${distanceMeters}`;
+export interface MapBounds {
+  minLat: number;
+  maxLat: number;
+  minLon: number;
+  maxLon: number;
 }
 
-function loadFromCache(cacheKey: string): CachedOsmData | null {
-  const cachePath = path.join(CACHE_DIR, `${cacheKey}.json`);
-  if (fs.existsSync(cachePath)) {
-    try {
-      const data = fs.readFileSync(cachePath, 'utf-8');
-      return JSON.parse(data) as CachedOsmData;
-    } catch {
-      return null;
-    }
-  }
-  return null;
+export interface RoadSegment {
+  points: Array<{ x: number; y: number }>;
+  highway: string;
+  color: string;
+  width: number;
 }
 
-function saveToCache(cacheKey: string, data: CachedOsmData): void {
-  if (!fs.existsSync(CACHE_DIR)) {
-    fs.mkdirSync(CACHE_DIR, { recursive: true });
-  }
-  const cachePath = path.join(CACHE_DIR, `${cacheKey}.json`);
-  fs.writeFileSync(cachePath, JSON.stringify(data, null, 2));
+export interface Polygon {
+  points: Array<{ x: number; y: number }>;
+  type: 'water' | 'park';
+}
+
+export interface MapData {
+  roads: RoadSegment[];
+  water: Polygon[];
+  parks: Polygon[];
+  bounds: MapBounds;
 }
 
 interface OverpassElement {
@@ -69,230 +78,166 @@ interface OverpassResponse {
   elements: OverpassElement[];
 }
 
-function metersToDegreesLat(meters: number): number {
-  return meters / 111320;
+export function getBbox(center: Coordinates, distanceMeters: number): [number, number, number, number] {
+    const latDelta = metersToDegreesLat(distanceMeters);
+    const lonDelta = metersToDegreesLon(distanceMeters, center.lat);
+
+    return [
+        center.lat - latDelta,
+        center.lon - lonDelta,
+        center.lat + latDelta,
+        center.lon + lonDelta,
+    ];
 }
 
-function metersToDegreesLon(meters: number, lat: number): number {
-  return meters / (111320 * Math.cos((lat * Math.PI) / 180));
-}
-
-function getBbox(center: Coordinates, distanceMeters: number): [number, number, number, number] {
-  const latDelta = metersToDegreesLat(distanceMeters);
-  const lonDelta = metersToDegreesLon(distanceMeters, center.lat);
-
-  return [
-    center.lat - latDelta,
-    center.lon - lonDelta,
-    center.lat + latDelta,
-    center.lon + lonDelta,
-  ];
-}
-
-async function queryOverpass(query: string): Promise<OverpassResponse> {
-  const response = await fetch(OVERPASS_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: `data=${encodeURIComponent(query)}`,
-  });
-
-  if (!response.ok) {
-    throw new Error(`Overpass API request failed: ${response.statusText}`);
-  }
-
-  return (await response.json()) as OverpassResponse;
-}
-
-function getRoadColor(highway: string, theme: Theme): string {
-  if (['motorway', 'motorway_link'].includes(highway)) {
-    return theme.road_motorway;
-  }
-  if (['trunk', 'trunk_link', 'primary', 'primary_link'].includes(highway)) {
-    return theme.road_primary;
-  }
-  if (['secondary', 'secondary_link'].includes(highway)) {
-    return theme.road_secondary;
-  }
-  if (['tertiary', 'tertiary_link'].includes(highway)) {
-    return theme.road_tertiary;
-  }
-  if (['residential', 'living_street', 'unclassified'].includes(highway)) {
-    return theme.road_residential;
-  }
-  return theme.road_default;
-}
-
-function getRoadWidth(highway: string): number {
-  if (['motorway', 'motorway_link'].includes(highway)) {
-    return 1.2;
-  }
-  if (['trunk', 'trunk_link', 'primary', 'primary_link'].includes(highway)) {
-    return 1.0;
-  }
-  if (['secondary', 'secondary_link'].includes(highway)) {
-    return 0.8;
-  }
-  if (['tertiary', 'tertiary_link'].includes(highway)) {
-    return 0.6;
-  }
-  return 0.4;
-}
-
-export interface FetchMapDataResult {
-  mapData: MapData;
-  cacheHit: boolean;
-}
-
-function applyThemeToRoads(cachedRoads: CachedRoad[], theme: Theme): RoadSegment[] {
-  return cachedRoads.map((road) => ({
-    points: road.geometry.map((p) => ({ x: p.lon, y: p.lat })),
-    highway: road.highway,
-    color: getRoadColor(road.highway, theme),
-    width: getRoadWidth(road.highway),
-  }));
-}
-
-function convertCachedPolygons(cachedPolygons: CachedPolygon[], type: 'water' | 'park'): Polygon[] {
-  return cachedPolygons.map((poly) => ({
-    points: poly.geometry.map((p) => ({ x: p.lon, y: p.lat })),
-    type,
-  }));
-}
-
-export async function fetchMapData(
-  center: Coordinates,
-  distanceMeters: number,
-  theme: Theme,
-  onProgress?: (step: string) => void
-): Promise<FetchMapDataResult> {
-  const cacheKey = getCacheKey(center, distanceMeters);
-  const cached = loadFromCache(cacheKey);
-
-  if (cached) {
-    onProgress?.('Loading from cache');
-    const mapData: MapData = {
-      roads: applyThemeToRoads(cached.roads, theme),
-      water: convertCachedPolygons(cached.water, 'water'),
-      parks: convertCachedPolygons(cached.parks, 'park'),
-      bounds: cached.bounds,
-    };
-    return { mapData, cacheHit: true };
-  }
-
-  const bbox = getBbox(center, distanceMeters);
-  const bboxStr = bbox.join(',');
-
-  const cachedRoads: CachedRoad[] = [];
-  const cachedWater: CachedPolygon[] = [];
-  const cachedParks: CachedPolygon[] = [];
-
-  onProgress?.('Downloading street network');
-  const roadsQuery = `
-    [out:json][timeout:90];
-    (
-      way["highway"](${bboxStr});
-    );
-    out geom;
-  `;
-
-  const roadsData = await queryOverpass(roadsQuery);
-
-  for (const element of roadsData.elements) {
-    if (element.type === 'way' && element.geometry && element.tags?.highway) {
-      cachedRoads.push({
-        geometry: element.geometry,
-        highway: element.tags.highway,
-      });
+export function getRoadColor(highway: string, theme: Theme): string {
+    if (['motorway', 'motorway_link'].includes(highway)) {
+        return theme.road_motorway;
     }
-  }
+    if (['trunk', 'trunk_link', 'primary', 'primary_link'].includes(highway)) {
+        return theme.road_primary;
+    }
+    if (['secondary', 'secondary_link'].includes(highway)) {
+        return theme.road_secondary;
+    }
+    if (['tertiary', 'tertiary_link'].includes(highway)) {
+        return theme.road_tertiary;
+    }
+    if (['residential', 'living_street', 'unclassified'].includes(highway)) {
+        return theme.road_residential;
+    }
+    return theme.road_default;
+}
 
-  await new Promise((resolve) => setTimeout(resolve, 500));
+export function getRoadWidth(highway: string): number {
+    if (['motorway', 'motorway_link'].includes(highway)) {
+        return 1.2;
+    }
+    if (['trunk', 'trunk_link', 'primary', 'primary_link'].includes(highway)) {
+        return 1.0;
+    }
+    if (['secondary', 'secondary_link'].includes(highway)) {
+        return 0.8;
+    }
+    if (['tertiary', 'tertiary_link'].includes(highway)) {
+        return 0.6;
+    }
+    return 0.4;
+}
 
-  onProgress?.('Downloading water features');
-  const waterQuery = `
-    [out:json][timeout:90];
-    (
-      way["natural"="water"](${bboxStr});
-      way["waterway"="riverbank"](${bboxStr});
-      relation["natural"="water"](${bboxStr});
-    );
-    out geom;
-  `;
+export function applyThemeToRoads(rawRoads: RawRoad[], theme: Theme): RoadSegment[] {
+    return rawRoads.map((road) => ({
+        points: road.geometry.map((p) => ({ x: p.lon, y: p.lat })),
+        highway: road.highway,
+        color: getRoadColor(road.highway, theme),
+        width: getRoadWidth(road.highway),
+    }));
+}
 
-  try {
-    const waterData = await queryOverpass(waterQuery);
+export function convertRawPolygons(rawPolygons: RawPolygon[], type: 'water' | 'park'): Polygon[] {
+    return rawPolygons.map((poly) => ({
+        points: poly.geometry.map((p) => ({ x: p.lon, y: p.lat })),
+        type,
+    }));
+}
+
+export function rawDataToMapData(raw: RawOsmData, theme: Theme): MapData {
+    return {
+        roads: applyThemeToRoads(raw.roads, theme),
+        water: convertRawPolygons(raw.water, 'water'),
+        parks: convertRawPolygons(raw.parks, 'park'),
+        bounds: raw.bounds,
+    };
+}
+
+export async function fetchRawOsmData(
+    config: Config,
+    center: Coordinates,
+    distanceMeters: number,
+): Promise<RawOsmData> {
+    const bbox = getBbox(center, distanceMeters);
+    const bboxStr = bbox.join(',');
+
+    const roads: RawRoad[] = [];
+    const water: RawPolygon[] = [];
+    const parks: RawPolygon[] = [];
+
+    logDebug('Downloading street network...');
+    const roadsQuery = `
+        [out:json][timeout:90];
+        (
+            way["highway"](${bboxStr});
+        );
+        out geom;
+    `;
+
+    const roadsData = await cache(config, ['roads', center.lat.toFixed(4), center.lon.toFixed(4), distanceMeters], () => apiPost<OverpassResponse>(config, config.overpassUrl, `data=${encodeURIComponent(roadsQuery)}`));
+
+    for (const element of roadsData.elements) {
+        if (element.type === 'way' && element.geometry && element.tags?.highway) {
+            roads.push({
+                geometry: element.geometry,
+                highway: element.tags.highway,
+            });
+        }
+    }
+
+    logDebug('Downloading water features...');
+    const waterQuery = `
+        [out:json][timeout:90];
+        (
+            way["natural"="water"](${bboxStr});
+            way["waterway"="riverbank"](${bboxStr});
+            relation["natural"="water"](${bboxStr});
+        );
+        out geom;
+    `;
+
+    const waterData = await cache(config, ['water', center.lat.toFixed(4), center.lon.toFixed(4), distanceMeters], () => apiPost<OverpassResponse>(config, config.overpassUrl, `data=${encodeURIComponent(waterQuery)}`));
 
     for (const element of waterData.elements) {
-      if (element.geometry) {
-        cachedWater.push({ geometry: element.geometry });
-      } else if (element.members) {
-        for (const member of element.members) {
-          if (member.geometry) {
-            cachedWater.push({ geometry: member.geometry });
-          }
+        if (element.geometry) {
+            water.push({ geometry: element.geometry });
+        } else if (element.members) {
+            for (const member of element.members) {
+                if (member.geometry) {
+                    water.push({ geometry: member.geometry });
+                }
+            }
         }
-      }
     }
-  } catch {
-    // Water features are optional
-  }
 
-  await new Promise((resolve) => setTimeout(resolve, 300));
+    logDebug('Downloading parks...');
+    const parksQuery = `
+        [out:json][timeout:90];
+        (
+            way["leisure"="park"](${bboxStr});
+            way["landuse"="grass"](${bboxStr});
+            relation["leisure"="park"](${bboxStr});
+        );
+        out geom;
+    `;
 
-  onProgress?.('Downloading parks/green spaces');
-  const parksQuery = `
-    [out:json][timeout:90];
-    (
-      way["leisure"="park"](${bboxStr});
-      way["landuse"="grass"](${bboxStr});
-      relation["leisure"="park"](${bboxStr});
-    );
-    out geom;
-  `;
-
-  try {
-    const parksData = await queryOverpass(parksQuery);
+    const parksData = await cache(config, ['parks', center.lat.toFixed(4), center.lon.toFixed(4), distanceMeters], () => apiPost<OverpassResponse>(config, config.overpassUrl, `data=${encodeURIComponent(parksQuery)}`));
 
     for (const element of parksData.elements) {
-      if (element.geometry) {
-        cachedParks.push({ geometry: element.geometry });
-      } else if (element.members) {
-        for (const member of element.members) {
-          if (member.geometry) {
-            cachedParks.push({ geometry: member.geometry });
-          }
+        if (element.geometry) {
+            parks.push({ geometry: element.geometry });
+        } else if (element.members) {
+            for (const member of element.members) {
+                if (member.geometry) {
+                    parks.push({ geometry: member.geometry });
+                }
+            }
         }
-      }
     }
-  } catch {
-    // Parks are optional
-  }
 
-  const bounds = {
-    minLat: bbox[0],
-    maxLat: bbox[2],
-    minLon: bbox[1],
-    maxLon: bbox[3],
-  };
+    const bounds: MapBounds = {
+        minLat: bbox[0],
+        maxLat: bbox[2],
+        minLon: bbox[1],
+        maxLon: bbox[3],
+    };
 
-  // Save to cache
-  const cacheData: CachedOsmData = {
-    roads: cachedRoads,
-    water: cachedWater,
-    parks: cachedParks,
-    bounds,
-    cachedAt: new Date().toISOString(),
-  };
-  saveToCache(cacheKey, cacheData);
-
-  const mapData: MapData = {
-    roads: applyThemeToRoads(cachedRoads, theme),
-    water: convertCachedPolygons(cachedWater, 'water'),
-    parks: convertCachedPolygons(cachedParks, 'park'),
-    bounds,
-  };
-
-  return { mapData, cacheHit: false };
+    return { roads, water, parks, bounds };
 }

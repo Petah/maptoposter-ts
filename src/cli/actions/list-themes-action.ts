@@ -1,21 +1,30 @@
-import { CommandLineAction } from '@rushstack/ts-command-line';
-import * as path from 'path';
-import { listThemes } from '@/poster/themes';
+import { BaseAction } from './base-action';
+import { Config } from '@/config';
+import { THEMES } from '@/theme';
 
-const THEMES_DIR = path.join(__dirname, '..', '..', '..', 'themes');
+export class ListThemesAction extends BaseAction {
+    public constructor(config: Config) {
+        super(config, {
+            actionName: 'list-themes',
+            summary: 'List all available themes',
+            documentation: 'Display all available color themes that can be used for poster generation.'
+        });
+    }
 
-export class ListThemesAction extends CommandLineAction {
-  public constructor() {
-    super({
-      actionName: 'list-themes',
-      summary: 'List all available themes',
-      documentation: 'Display all available color themes that can be used for poster generation.'
-    });
-  }
+    protected async onExecuteAsync(): Promise<void> {
+        console.log('\nAvailable Themes:');
+        console.log('-'.repeat(60));
 
-  protected onDefineParameters(): void {}
+        for (const themeName in THEMES) {
+            const theme = THEMES[themeName];
+            const displayName = theme.name || themeName;
+            const description = theme.description || '';
 
-  protected async onExecuteAsync(): Promise<void> {
-    listThemes(THEMES_DIR);
-  }
+            console.log(`  ${themeName}`);
+            console.log(`    ${displayName}`);
+            if (description) {
+                console.log(`    ${description}`);
+            }
+        }
+    }
 }

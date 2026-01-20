@@ -4,8 +4,11 @@ node_modules/
 # Build output
 dist/
 
-# Generated posters
-posters/
+# Generated code
+web/src/generated/
+
+# Generated output
+output/
 
 # OSM data cache
 cache/
