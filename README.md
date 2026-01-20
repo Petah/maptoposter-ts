@@ -7,21 +7,20 @@ Generate beautiful map posters for any city using OpenStreetMap data.
 ## Installation
 
 ```bash
-npm install
-npm run build
+npm install -g @petah/maptoposter
 ```
 
 ## Usage
 
 ```bash
 # Generate a poster
-npm start -- --city "Paris" --country "France"
+maptoposter generate --city "Paris" --country "France"
 
 # With options
-npm start -- --city "Tokyo" --country "Japan" --theme midnight_blue --distance 15000
+maptoposter generate --city "Tokyo" --country "Japan" --theme midnight_blue --distance 15000
 
 # List available themes
-npm start -- --list-themes
+maptoposter list-themes
 ```
 
 ### Options
@@ -46,23 +45,23 @@ npm start -- --list-themes
 
 ```bash
 # Iconic grid patterns
-npm start -- -c "New York" -C "USA" -t noir -d 12000
-npm start -- -c "Barcelona" -C "Spain" -t warm_beige -d 8000
+maptoposter generate -c "New York" -C "USA" -t noir -d 12000
+maptoposter generate -c "Barcelona" -C "Spain" -t warm_beige -d 8000
 
 # Waterfront & canals
-npm start -- -c "Venice" -C "Italy" -t blueprint -d 4000
-npm start -- -c "Amsterdam" -C "Netherlands" -t ocean -d 6000
+maptoposter generate -c "Venice" -C "Italy" -t blueprint -d 4000
+maptoposter generate -c "Amsterdam" -C "Netherlands" -t ocean -d 6000
 
 # Radial patterns
-npm start -- -c "Paris" -C "France" -t pastel_dream -d 10000
+maptoposter generate -c "Paris" -C "France" -t pastel_dream -d 10000
 
 # Organic old cities
-npm start -- -c "Tokyo" -C "Japan" -t japanese_ink -d 15000
-npm start -- -c "Rome" -C "Italy" -t warm_beige -d 8000
+maptoposter generate -c "Tokyo" -C "Japan" -t japanese_ink -d 15000
+maptoposter generate -c "Rome" -C "Italy" -t warm_beige -d 8000
 
 # River cities
-npm start -- -c "London" -C "UK" -t noir -d 15000
-npm start -- -c "Budapest" -C "Hungary" -t copper_patina -d 8000
+maptoposter generate -c "London" -C "UK" -t noir -d 15000
+maptoposter generate -c "Budapest" -C "Hungary" -t copper_patina -d 8000
 ```
 
 ## Themes

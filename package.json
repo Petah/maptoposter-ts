@@ -1,11 +1,20 @@
 {
-  "name": "maptoposter",
+  "name": "@petah/maptoposter",
   "version": "1.0.0",
   "description": "Generate beautiful map posters for any city",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
     "maptoposter": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsup",
